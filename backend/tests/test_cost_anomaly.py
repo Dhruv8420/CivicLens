@@ -11,6 +11,7 @@ Tests verify:
 from pathlib import Path
 
 import pandas as pd
+# pyrefly: ignore [missing-import]
 import pytest
 
 from app.engine.detectors.cost_anomaly import (
