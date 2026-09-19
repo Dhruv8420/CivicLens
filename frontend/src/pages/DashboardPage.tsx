@@ -69,18 +69,25 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <div className="dashboard-layout">
-      <Navbar isConnected={isConnected} totalProjects={projects.length} />
+      <Navbar
+        isConnected={isConnected}
+        totalProjects={projects.length}
+        onOpenUpload={() => setShowUploadForm(!showUploadForm)}
+        isUploadOpen={showUploadForm}
+      />
 
       <main className="dashboard-content">
-        <div className="dashboard-top-actions">
-          {!uploadResult ? (
-            <button
-              className="toggle-upload-btn"
-              onClick={() => setShowUploadForm(!showUploadForm)}
-            >
-              {showUploadForm ? '✖ Close Upload Section' : '📤 Upload Custom Dataset (CSV)'}
-            </button>
-          ) : null}
+        <div className="hero-banner">
+          <div className="hero-content">
+            <div className="hero-pill">
+              <span className="hero-pill-icon">🛡️</span>
+              <span>Explainable Risk Intelligence Engine • MoSPI PAIMANA Audit Integration</span>
+            </div>
+            <h2 className="hero-title">Public Infrastructure Risk Audit</h2>
+            <p className="hero-subtitle">
+              Automated anomaly detection for major development projects. Evaluates sector-wise IQR cost baselines, physical vs expenditure progress gaps, completion delays, and budget overruns.
+            </p>
+          </div>
         </div>
 
         {showUploadForm && (
@@ -100,9 +107,9 @@ export const DashboardPage: React.FC = () => {
         {isLoading && (
           <div className="state-card loading-state">
             <div className="spinner" />
-            <p className="state-title">Analyzing Public Development Projects...</p>
+            <p className="state-title">Analyzing Infrastructure Dataset...</p>
             <p className="state-subtitle">
-              Calculating IQR bounds, progress gaps, schedule delays, and cost overruns.
+              Computing IQR sector baselines, expenditure progress gaps, schedule deadlines, and cost overrun signals.
             </p>
           </div>
         )}
@@ -110,10 +117,10 @@ export const DashboardPage: React.FC = () => {
         {!isLoading && error && (
           <div className="state-card error-state">
             <div className="error-icon">⚠️</div>
-            <h3 className="state-title">Backend Connection Failure</h3>
+            <h3 className="state-title">Backend API Offline</h3>
             <p className="state-subtitle">{error}</p>
             <button className="primary-btn retry-btn" onClick={loadData}>
-              🔄 Retry Connection
+              🔄 Retry System Connection
             </button>
           </div>
         )}

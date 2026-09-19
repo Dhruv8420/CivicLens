@@ -27,16 +27,16 @@ export const DetectorAvailabilityBanner: React.FC<DetectorAvailabilityBannerProp
     <div className="availability-banner-card">
       <div className="banner-header">
         <div className="banner-title-group">
-          <span className="file-icon">📄</span>
+          <span className="file-icon">📊</span>
           <div>
             <h3 className="banner-filename">{filename}</h3>
             <p className="banner-meta">
-              Custom Dataset • {totalProjects} projects evaluated
+              Uploaded Dataset Analysis • {totalProjects.toLocaleString()} projects evaluated
             </p>
           </div>
         </div>
-        <button className="reset-btn" onClick={onReset} title="Reset to default synthetic dataset">
-          ← Reset to Synthetic Benchmark
+        <button className="reset-btn" onClick={onReset} title="Reset to default benchmark dataset">
+          ← Reset to Standard Benchmark Data
         </button>
       </div>
 
