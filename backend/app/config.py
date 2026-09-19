@@ -4,7 +4,12 @@ Application configuration via pydantic-settings.
 Reads from environment variables and .env file.
 """
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
+
+# Base backend directory
+BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 
 class Settings(BaseSettings):
@@ -18,6 +23,9 @@ class Settings(BaseSettings):
         "http://localhost:5173",  # Vite dev server
         "http://localhost:3000",
     ]
+
+    # Dataset path (resolved relative to backend directory)
+    DATASET_PATH: Path = BACKEND_DIR / "data" / "sample_projects.csv"
 
     # Anomaly detection thresholds (will be used by detectors later)
     PROGRESS_MISMATCH_THRESHOLD: float = 25.0  # percentage points
