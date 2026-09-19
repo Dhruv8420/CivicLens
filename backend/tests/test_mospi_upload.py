@@ -15,7 +15,7 @@ MOSPI_CSV_PATH = os.path.join("scratch", "real_data", "mospi_paimana", "paimana_
 
 
 def test_mospi_adapter_ingestion():
-    """Test that MoSPI PAIMANA CSV is correctly recognized, mapped, deduplicated, and converted from Crores to Lakhs."""
+    """Test that MoSPI PAIMANA CSV (REST format) is correctly recognized, mapped, deduplicated, and converted from Crores to Lakhs."""
     assert os.path.exists(MOSPI_CSV_PATH), f"MoSPI CSV file not found at {MOSPI_CSV_PATH}"
     
     with open(MOSPI_CSV_PATH, "rb") as f:
@@ -63,6 +63,56 @@ def test_mospi_adapter_ingestion():
     assert "MoSPI PAIMANA upload" in avail["progress_mismatch"]["reason"]
     assert avail["delay"]["available"] is False
     assert "MoSPI PAIMANA upload" in avail["delay"]["reason"]
+
+
+def test_mospi_portal_export_ingestion():
+    """Test that official MoSPI PAIMANA portal export format (with banner preamble) is parsed, mapped, scaled, and evaluated cleanly."""
+    portal_csv_content = (
+        '"Projects Details"\n'
+        '\n'
+        '"Sr. No.","Sector Name","Line Ministry","Project Code","Project Name","Original Cost\n(in cr.)","Revised Cost\n(in cr.)","Expenditure\n(in cr.)","Original End Date","Revised Date"\n'
+        '"1","Aviation & Aviation Infrastructure","Ministry of Civil Aviation","706718","C/o NITB Imphal Airport","499","499","201.99","13/07/2024","31/12/2026"\n'
+        '"2","Aviation & Aviation Infrastructure","Ministry of Civil Aviation","701121","Domestic Terminal Rajahmundry","347","0","170.79","13/08/2025","30/06/2026"\n'
+    )
+    file_bytes = portal_csv_content.encode("utf-8")
+
+    result = process_csv_bytes(file_bytes, "Projects_Report.csv")
+
+    assert result.df is not None
+    assert len(result.df) == 2
+
+    # Column mapping checks
+    assert list(result.df["project_id"]) == ["706718", "701121"]
+    assert list(result.df["sector"]) == ["Aviation & Aviation Infrastructure", "Aviation & Aviation Infrastructure"]
+    assert list(result.df["department"]) == ["Ministry of Civil Aviation", "Ministry of Civil Aviation"]
+
+    # Unit conversion checks (499 Cr -> 49900 Lakhs)
+    p1 = result.df[result.df["project_id"] == "706718"].iloc[0]
+    assert p1["original_cost_lakhs"] == pytest.approx(49900.0)
+    assert p1["revised_cost_lakhs"] == pytest.approx(49900.0)
+    assert p1["expenditure_lakhs"] == pytest.approx(20199.0)
+
+    # Preservation of completion dates (Original End Date -> target_completion_date, Revised Date -> revised_completion_date)
+    assert "target_completion_date" in result.df.columns
+    assert list(result.df["target_completion_date"]) == ["13/07/2024", "13/08/2025"]
+    assert "revised_completion_date" in result.df.columns
+    assert list(result.df["revised_completion_date"]) == ["31/12/2026", "30/06/2026"]
+
+    # Absence of fabricated fields (status is missing and not fabricated)
+    assert "physical_progress_pct" not in result.df.columns or result.df["physical_progress_pct"].isna().all()
+    assert "status" not in result.df.columns
+    status_warnings = [w for w in result.warnings if "status" in w.lower()]
+    assert len(status_warnings) == 0
+
+    # Detector availability checks (Delay unavailable specifically because status is missing, NOT because dates are missing)
+    avail = result.detector_availability
+    assert avail["cost_anomaly"]["available"] is True
+    assert avail["cost_overrun"]["available"] is True
+    assert avail["progress_mismatch"]["available"] is False
+    assert avail["delay"]["available"] is False
+    assert avail["delay"]["missing_columns"] == ["status"]
+    assert avail["delay"]["reason"] == "Skipped: Project status / execution state is not provided in the MoSPI PAIMANA upload."
+    assert "target" not in avail["delay"]["reason"].lower() and "revised completion dates" not in avail["delay"]["reason"].lower()
 
 
 def test_mospi_analysis_service_integration():

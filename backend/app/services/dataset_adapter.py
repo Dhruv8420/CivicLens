@@ -27,7 +27,7 @@ class DatasetIngestionError(Exception):
 # Mapping canonical key -> list of common header aliases (lowercase, stripped)
 CANONICAL_ALIASES: dict[str, list[str]] = {
     "project_id": [
-        "project_id", "projectid", "prj_id", "id", "code", "project_code",
+        "project_id", "projectid", "prj_id", "id", "code", "project_code", "projectcode",
         "ref_no", "sl_no", "s_no", "project_no", "serial_no", "sl.no"
     ],
     "project_name": [
@@ -40,17 +40,17 @@ CANONICAL_ALIASES: dict[str, list[str]] = {
         "original_cost_lakhs", "original_cost", "projectcost", "project_cost", "sanctioned_cost", "approved_cost",
         "original_cost_(rs_lakhs)", "sanctioned_cost_lakhs", "original_cost_rs_lakhs",
         "sanctioned_cost_in_lakhs", "approved_cost_lakhs", "original_cost_(lakhs)",
-        "sanctioned_cost_rs_lakhs", "sanctioned_cost_(rs_lakhs)"
+        "sanctioned_cost_rs_lakhs", "sanctioned_cost_(rs_lakhs)", "original_cost_in_cr", "original_cost_in_cr_"
     ],
     "revised_cost_lakhs": [
         "revised_cost_lakhs", "revised_cost", "revisedcost", "latest_cost", "latest_approved_cost",
         "revised_cost_(rs_lakhs)", "anticipated_cost", "revised_cost_rs_lakhs",
-        "anticipated_cost_lakhs", "revised_cost_(lakhs)"
+        "anticipated_cost_lakhs", "revised_cost_(lakhs)", "revised_cost_in_cr", "revised_cost_in_cr_"
     ],
     "expenditure_lakhs": [
         "expenditure_lakhs", "expenditure", "texpend", "t_expend", "cumulative_expenditure", "total_expenditure",
         "expenditure_(rs_lakhs)", "financial_progress_lakhs", "expenditure_rs_lakhs",
-        "total_expenditure_lakhs", "expenditure_(lakhs)"
+        "total_expenditure_lakhs", "expenditure_(lakhs)", "expenditure_in_cr", "expenditure_in_cr_"
     ],
     "physical_progress_pct": [
         "physical_progress_pct", "physical_progress", "progress_pct", "completion_pct",
@@ -62,11 +62,11 @@ CANONICAL_ALIASES: dict[str, list[str]] = {
     ],
     "target_completion_date": [
         "target_completion_date", "target_date", "original_completion_date", "doc",
-        "target_date_of_completion"
+        "target_date_of_completion", "original_end_date"
     ],
     "revised_completion_date": [
         "revised_completion_date", "revised_doc", "anticipated_completion_date",
-        "expected_doc", "revised_date_of_completion"
+        "expected_doc", "revised_date_of_completion", "revised_date"
     ],
     "status": [
         "status", "project_status", "stage", "current_status"
@@ -98,13 +98,39 @@ def _normalize_header(header: str) -> str:
     return s.strip("_")
 
 
+def _strip_csv_preamble(text: str) -> str:
+    """
+    Detect preamble banner rows (e.g. "Projects Details" title line and blank lines)
+    and strip them so pandas reads from the actual table header.
+    """
+    lines = text.splitlines(True)
+    if not lines:
+        return text
+
+    header_indicators = {
+        "project_id", "project_code", "project_name", "projectid",
+        "projectname", "sr_no", "sr. no.", "sl_no", "project_cost", "sector_name"
+    }
+
+    for idx, line in enumerate(lines[:10]):
+        norm_line = line.strip().lower()
+        cleaned = re.sub(r'["\',;\t]+', ' ', norm_line)
+        if any(ind in cleaned for ind in header_indicators):
+            return "".join(lines[idx:])
+
+    return text
+
+
 def _is_mospi_paimana_dataset(df: pd.DataFrame) -> bool:
     """
-    Check if the DataFrame positively matches the MoSPI PAIMANA official header schema.
-    Requires presence of MoSPI-specific source column names.
+    Check if the DataFrame positively matches either official MoSPI PAIMANA header schema:
+    1. REST API format (ProjectID, ProjectName, ProjectCost, TExpend, RevisedCost, SectorName, LineMinistry)
+    2. Official Portal Export format (Project Code, Project Name, Sector Name, Line Ministry, Original Cost (in cr.), Revised Cost (in cr.), Expenditure (in cr.))
     """
     normalized = {_normalize_header(col) for col in df.columns}
-    mospi_required_headers = {
+
+    # Schema 1: REST API export
+    mospi_rest = {
         "projectid",
         "projectname",
         "sectorname",
@@ -113,7 +139,23 @@ def _is_mospi_paimana_dataset(df: pd.DataFrame) -> bool:
         "revisedcost",
         "texpend",
     }
-    return mospi_required_headers.issubset(normalized)
+    if mospi_rest.issubset(normalized):
+        return True
+
+    # Schema 2: Official Web Portal export
+    mospi_portal = {
+        "project_code",
+        "project_name",
+        "sector_name",
+        "line_ministry",
+        "original_cost_in_cr",
+        "revised_cost_in_cr",
+        "expenditure_in_cr",
+    }
+    if mospi_portal.issubset(normalized):
+        return True
+
+    return False
 
 
 def _map_columns_to_canonical(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str], bool]:
@@ -183,8 +225,11 @@ def process_csv_bytes(file_bytes: bytes, filename: str) -> AdapterResult:
                 f"File '{filename}' has invalid encoding. Please save as UTF-8 CSV."
             )
 
+    # Strip title banner rows (e.g. "Projects Details" preamble lines) if present
+    clean_text = _strip_csv_preamble(text)
+
     try:
-        df = pd.read_csv(io.StringIO(text))
+        df = pd.read_csv(io.StringIO(clean_text))
     except Exception as e:
         raise DatasetIngestionError(f"Failed to parse CSV: {str(e)}")
 
@@ -338,11 +383,17 @@ def process_csv_bytes(file_bytes: bytes, filename: str) -> AdapterResult:
             missing_delay.append("revised_completion_date")
         if "status" not in df.columns:
             missing_delay.append("status")
-        delay_reason = (
-            "Skipped: Target and revised completion dates are not provided in the MoSPI PAIMANA upload."
-            if is_mospi
-            else f"Skipped: Missing required column(s): {', '.join(missing_delay)}."
-        )
+
+        if is_mospi:
+            if not delay_has_date and "status" not in df.columns:
+                delay_reason = "Skipped: Target/revised completion dates and project status are not provided in the MoSPI PAIMANA upload."
+            elif not delay_has_date:
+                delay_reason = "Skipped: Target and revised completion dates are not provided in the MoSPI PAIMANA upload."
+            else:
+                delay_reason = "Skipped: Project status / execution state is not provided in the MoSPI PAIMANA upload."
+        else:
+            delay_reason = f"Skipped: Missing required column(s): {', '.join(missing_delay)}."
+
         detector_availability["delay"] = {
             "available": False,
             "missing_columns": missing_delay,
