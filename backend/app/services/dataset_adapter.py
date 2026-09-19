@@ -31,24 +31,24 @@ CANONICAL_ALIASES: dict[str, list[str]] = {
         "ref_no", "sl_no", "s_no", "project_no", "serial_no", "sl.no"
     ],
     "project_name": [
-        "project_name", "name", "title", "project_title", "work_name", "scheme_name"
+        "project_name", "projectname", "name", "title", "project_title", "work_name", "scheme_name"
     ],
     "sector": [
-        "sector", "category", "sub_sector", "domain", "department_sector", "sector_name"
+        "sector", "sectorname", "sector_name", "category", "sub_sector", "domain", "department_sector"
     ],
     "original_cost_lakhs": [
-        "original_cost_lakhs", "original_cost", "sanctioned_cost", "approved_cost",
+        "original_cost_lakhs", "original_cost", "projectcost", "project_cost", "sanctioned_cost", "approved_cost",
         "original_cost_(rs_lakhs)", "sanctioned_cost_lakhs", "original_cost_rs_lakhs",
         "sanctioned_cost_in_lakhs", "approved_cost_lakhs", "original_cost_(lakhs)",
         "sanctioned_cost_rs_lakhs", "sanctioned_cost_(rs_lakhs)"
     ],
     "revised_cost_lakhs": [
-        "revised_cost_lakhs", "revised_cost", "latest_cost", "latest_approved_cost",
+        "revised_cost_lakhs", "revised_cost", "revisedcost", "latest_cost", "latest_approved_cost",
         "revised_cost_(rs_lakhs)", "anticipated_cost", "revised_cost_rs_lakhs",
         "anticipated_cost_lakhs", "revised_cost_(lakhs)"
     ],
     "expenditure_lakhs": [
-        "expenditure_lakhs", "expenditure", "cumulative_expenditure", "total_expenditure",
+        "expenditure_lakhs", "expenditure", "texpend", "t_expend", "cumulative_expenditure", "total_expenditure",
         "expenditure_(rs_lakhs)", "financial_progress_lakhs", "expenditure_rs_lakhs",
         "total_expenditure_lakhs", "expenditure_(lakhs)"
     ],
@@ -72,7 +72,7 @@ CANONICAL_ALIASES: dict[str, list[str]] = {
         "status", "project_status", "stage", "current_status"
     ],
     "department": [
-        "department", "ministry", "agency", "dept"
+        "department", "ministry", "lineministry", "line_ministry", "agency", "dept"
     ],
     "state": [
         "state", "province", "region", "location"
@@ -98,11 +98,31 @@ def _normalize_header(header: str) -> str:
     return s.strip("_")
 
 
-def _map_columns_to_canonical(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
-    """Rename DataFrame columns to canonical names using alias dictionary."""
+def _is_mospi_paimana_dataset(df: pd.DataFrame) -> bool:
+    """
+    Check if the DataFrame positively matches the MoSPI PAIMANA official header schema.
+    Requires presence of MoSPI-specific source column names.
+    """
+    normalized = {_normalize_header(col) for col in df.columns}
+    mospi_required_headers = {
+        "projectid",
+        "projectname",
+        "sectorname",
+        "lineministry",
+        "projectcost",
+        "revisedcost",
+        "texpend",
+    }
+    return mospi_required_headers.issubset(normalized)
+
+
+def _map_columns_to_canonical(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str], bool]:
+    """Rename DataFrame columns to canonical names using alias dictionary and detect MoSPI fingerprint."""
     renames: dict[str, str] = {}
     warnings: list[str] = []
     normalized_headers = {_normalize_header(col): col for col in df.columns}
+    
+    is_mospi = _is_mospi_paimana_dataset(df)
 
     # Match canonical keys
     mapped_canonical: set[str] = set()
@@ -117,7 +137,7 @@ def _map_columns_to_canonical(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]
                     break
 
     df = df.rename(columns=renames)
-    return df, warnings
+    return df, warnings, is_mospi
 
 
 def _clean_numeric_series(series: pd.Series) -> pd.Series:
@@ -171,7 +191,7 @@ def process_csv_bytes(file_bytes: bytes, filename: str) -> AdapterResult:
     if len(df) == 0:
         raise DatasetIngestionError("CSV file contains no data rows.")
 
-    df, warnings = _map_columns_to_canonical(df)
+    df, warnings, is_mospi = _map_columns_to_canonical(df)
 
     if "project_id" not in df.columns:
         avail_cols = sorted(list(df.columns))
@@ -183,12 +203,49 @@ def process_csv_bytes(file_bytes: bytes, filename: str) -> AdapterResult:
     df["project_id"] = df["project_id"].astype(str).str.strip()
 
     # Handle duplicate project IDs
-    if df["project_id"].duplicated().any():
+    if is_mospi:
+        raw_rows = len(df)
+        dup_pid_mask = df.duplicated(subset=["project_id"], keep=False)
+        if dup_pid_mask.any():
+            relevant_cols = [
+                c for c in [
+                    "project_id", "project_name", "sector", "department",
+                    "original_cost_lakhs", "revised_cost_lakhs", "expenditure_lakhs"
+                ] if c in df.columns
+            ]
+            
+            # Group by project_id and check for value conflicts
+            conflicts = []
+            grouped = df[dup_pid_mask].groupby("project_id")
+            for pid, group in grouped:
+                if group[relevant_cols].drop_duplicates().shape[0] > 1:
+                    conflicts.append(str(pid))
+
+            if conflicts:
+                warnings.append(
+                    f"MoSPI dataset contains {len(conflicts)} ProjectID(s) with conflicting data values: {conflicts[:5]}. Preserved all rows."
+                )
+            else:
+                # Exact duplicates verified - safe to collapse
+                df = df.drop_duplicates(subset=relevant_cols, keep="first").reset_index(drop=True)
+                exact_removed = raw_rows - len(df)
+                warnings.append(
+                    f"MoSPI PAIMANA dataset: Identified and collapsed {exact_removed} exact duplicate project records ({len(df)} unique projects retained out of {raw_rows} raw rows)."
+                )
+    elif df["project_id"].duplicated().any():
+        init_count = len(df)
+        counts: dict[str, int] = {}
+        new_pids: list[str] = []
+        for pid in df["project_id"]:
+            if pid in counts:
+                counts[pid] += 1
+                new_pids.append(f"{pid}_{counts[pid]}")
+            else:
+                counts[pid] = 1
+                new_pids.append(pid)
+        df["project_id"] = new_pids
         warnings.append(
-            "Duplicate project_ids detected. Appended row suffixes to ensure unique identifiers."
-        )
-        df["project_id"] = (
-            df["project_id"] + "_row" + (df.index + 1).astype(str)
+            f"Duplicate project_ids detected ({init_count - len(counts)} duplicates). Appended unique suffixes to preserve all {init_count} rows."
         )
 
     # Default metadata if missing
@@ -214,6 +271,12 @@ def process_csv_bytes(file_bytes: bytes, filename: str) -> AdapterResult:
     for col in numeric_cols:
         if col in df.columns:
             df[col] = _clean_numeric_series(df[col])
+            # Convert Crores to Lakhs ONLY when MoSPI fingerprint is positively matched
+            if is_mospi and col in ["original_cost_lakhs", "revised_cost_lakhs", "expenditure_lakhs"]:
+                df[col] = df[col] * 100.0
+
+    if is_mospi:
+        warnings.append("MoSPI PAIMANA dataset detected: Converted monetary values from Crores to Lakhs (multiplied by 100).")
 
     # Clean revised_completion_date
     if "revised_completion_date" in df.columns:
@@ -227,7 +290,7 @@ def process_csv_bytes(file_bytes: bytes, filename: str) -> AdapterResult:
         detector_availability["cost_anomaly"] = {
             "available": True,
             "missing_columns": [],
-            "reason": "Evaluated using 'original_cost_lakhs' and 'sector'.",
+            "reason": None,
         }
     else:
         detector_availability["cost_anomaly"] = {
@@ -243,13 +306,18 @@ def process_csv_bytes(file_bytes: bytes, filename: str) -> AdapterResult:
         detector_availability["progress_mismatch"] = {
             "available": True,
             "missing_columns": [],
-            "reason": "Evaluated using expenditure, revised cost, and physical progress.",
+            "reason": None,
         }
     else:
+        pm_reason = (
+            "Skipped: Physical progress % is not provided in the MoSPI PAIMANA upload."
+            if is_mospi
+            else f"Skipped: Missing required column(s): {', '.join(pm_missing)}."
+        )
         detector_availability["progress_mismatch"] = {
             "available": False,
             "missing_columns": pm_missing,
-            "reason": f"Skipped: Missing required column(s): {', '.join(pm_missing)}.",
+            "reason": pm_reason,
         }
 
     # 3. Delay
@@ -261,7 +329,7 @@ def process_csv_bytes(file_bytes: bytes, filename: str) -> AdapterResult:
         detector_availability["delay"] = {
             "available": True,
             "missing_columns": [],
-            "reason": "Evaluated using completion date and status.",
+            "reason": None,
         }
     else:
         missing_delay = []
@@ -269,10 +337,15 @@ def process_csv_bytes(file_bytes: bytes, filename: str) -> AdapterResult:
             missing_delay.append("revised_completion_date")
         if "status" not in df.columns:
             missing_delay.append("status")
+        delay_reason = (
+            "Skipped: Target and revised completion dates are not provided in the MoSPI PAIMANA upload."
+            if is_mospi
+            else f"Skipped: Missing required column(s): {', '.join(missing_delay)}."
+        )
         detector_availability["delay"] = {
             "available": False,
             "missing_columns": missing_delay,
-            "reason": f"Skipped: Missing required column(s): {', '.join(missing_delay)}.",
+            "reason": delay_reason,
         }
 
     # 4. Cost Overrun
@@ -282,7 +355,7 @@ def process_csv_bytes(file_bytes: bytes, filename: str) -> AdapterResult:
         detector_availability["cost_overrun"] = {
             "available": True,
             "missing_columns": [],
-            "reason": "Evaluated using original cost and revised cost.",
+            "reason": None,
         }
     else:
         detector_availability["cost_overrun"] = {
