@@ -65,3 +65,21 @@ export interface ProjectMetadata {
   sector: string;
   status: string;
 }
+
+export interface DetectorAvailabilityInfo {
+  available: boolean;
+  missing_columns: string[];
+  reason: string;
+}
+
+export interface UploadResponse {
+  filename: string;
+  total_projects: number;
+  summary: {
+    total: number;
+    risk_distribution: Record<string, number>;
+  };
+  detector_availability: Record<string, DetectorAvailabilityInfo>;
+  warnings: string[];
+  projects: RiskEngineResult[];
+}

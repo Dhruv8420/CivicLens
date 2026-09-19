@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.projects import router as projects_router
+from app.api.routes.upload import router as upload_router
 from app.config import settings
 
 app = FastAPI(
@@ -32,6 +33,7 @@ app.add_middleware(
 
 # Include API routers
 app.include_router(projects_router)
+app.include_router(upload_router)
 
 
 @app.get("/api/health", tags=["System"])

@@ -1,22 +1,28 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { DetectorAvailabilityBanner } from '../components/DetectorAvailabilityBanner';
 import { Navbar } from '../components/Navbar';
 import { ProjectDetailDrawer } from '../components/ProjectDetailDrawer';
 import { ProjectTable } from '../components/ProjectTable';
 import { SummaryCards } from '../components/SummaryCards';
-import { checkBackendHealth, fetchAllProjects } from '../services/api';
-import type { RiskEngineResult } from '../types/risk';
+import { UploadSection } from '../components/UploadSection';
+import { checkBackendHealth, fetchAllProjects, uploadCSVDataset } from '../services/api';
+import type { RiskEngineResult, UploadResponse } from '../types/risk';
 
 export const DashboardPage: React.FC = () => {
   const [projects, setProjects] = useState<RiskEngineResult[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [uploadResult, setUploadResult] = useState<UploadResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
   const [activeFilter, setActiveFilter] = useState<string>('ALL');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [showUploadForm, setShowUploadForm] = useState<boolean>(false);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    setUploadResult(null);
 
     const healthy = await checkBackendHealth();
     setIsConnected(healthy);
@@ -43,6 +49,22 @@ export const DashboardPage: React.FC = () => {
     loadData();
   }, [loadData]);
 
+  const handleUpload = async (file: File) => {
+    setIsUploading(true);
+    try {
+      const result = await uploadCSVDataset(file);
+      setUploadResult(result);
+      setProjects(result.projects || []);
+      setActiveFilter('ALL');
+      setSelectedProjectId(null);
+      setShowUploadForm(false);
+    } catch (err: any) {
+      throw err;
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const selectedProject = projects.find((p) => p.project_id === selectedProjectId) || null;
 
   return (
@@ -50,6 +72,31 @@ export const DashboardPage: React.FC = () => {
       <Navbar isConnected={isConnected} totalProjects={projects.length} />
 
       <main className="dashboard-content">
+        <div className="dashboard-top-actions">
+          {!uploadResult ? (
+            <button
+              className="toggle-upload-btn"
+              onClick={() => setShowUploadForm(!showUploadForm)}
+            >
+              {showUploadForm ? '✖ Close Upload Section' : '📤 Upload Custom Dataset (CSV)'}
+            </button>
+          ) : null}
+        </div>
+
+        {showUploadForm && (
+          <UploadSection onUpload={handleUpload} isUploading={isUploading} />
+        )}
+
+        {uploadResult && (
+          <DetectorAvailabilityBanner
+            filename={uploadResult.filename}
+            totalProjects={uploadResult.total_projects}
+            detectorAvailability={uploadResult.detector_availability}
+            warnings={uploadResult.warnings}
+            onReset={loadData}
+          />
+        )}
+
         {isLoading && (
           <div className="state-card loading-state">
             <div className="spinner" />

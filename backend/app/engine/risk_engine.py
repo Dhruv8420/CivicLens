@@ -98,7 +98,11 @@ def _get_risk_level_and_recommendation(score: float) -> tuple[str, str]:
         )
 
 
-def evaluate_project(project_id: str, detector_results: list[dict]) -> dict:
+def evaluate_project(
+    project_id: str,
+    detector_results: list[dict],
+    detector_availability: dict[str, dict[str, Any]] | None = None,
+) -> dict:
     """
     Evaluate risk score and assemble explainable result for a single project.
 
@@ -107,7 +111,9 @@ def evaluate_project(project_id: str, detector_results: list[dict]) -> dict:
     project_id : str
         The identifier of the project.
     detector_results : list[dict]
-        Detector output dicts for this project (from up to 4 detectors).
+        Detector output dicts for this project (from available detectors).
+    detector_availability : dict[str, dict[str, Any]] | None
+        Optional availability metadata per detector.
 
     Returns
     -------
@@ -144,7 +150,10 @@ def evaluate_project(project_id: str, detector_results: list[dict]) -> dict:
             is_flagged = False
             severity = 0.0
             direction = "missing"
-            reason = f"Detector '{det_name}' result is missing."
+            avail_info = (detector_availability or {}).get(det_name, {})
+            reason = avail_info.get(
+                "reason", f"Detector '{det_name}' result is missing."
+            )
             status = "missing_data"
             contribution = 0.0
 
@@ -184,9 +193,11 @@ def evaluate_projects(
     reference_date: date | None = None,
     progress_threshold: float | None = None,
     cost_overrun_threshold: float | None = None,
+    available_detectors: set[str] | list[str] | None = None,
+    detector_availability: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict]:
     """
-    Run all four detectors on *df* and compute project-level risk scores.
+    Run active detectors on *df* and compute project-level risk scores.
 
     Parameters
     ----------
@@ -198,6 +209,11 @@ def evaluate_projects(
         Optional mismatch threshold percentage points forwarded to progress mismatch detector.
     cost_overrun_threshold : float | None
         Optional overrun threshold percentage forwarded to cost overrun detector.
+    available_detectors : set[str] | list[str] | None
+        Optional set of available detector names. If None, evaluates all detectors whose
+        required columns are present in df.
+    detector_availability : dict[str, dict[str, Any]] | None
+        Optional detailed availability status dict per detector.
 
     Returns
     -------
@@ -207,22 +223,48 @@ def evaluate_projects(
     if "project_id" not in df.columns:
         raise ValueError("DataFrame missing required column: 'project_id'")
 
-    ca_results = cost_anomaly.detect(df)
+    if available_detectors is None:
+        avail_set = {"cost_anomaly", "progress_mismatch", "delay", "cost_overrun"}
+    else:
+        avail_set = set(available_detectors)
 
-    pm_kwargs: dict[str, Any] = {}
-    if progress_threshold is not None:
-        pm_kwargs["threshold"] = progress_threshold
-    pm_results = progress_mismatch.detect(df, **pm_kwargs)
+    ca_results: list[dict] = []
+    if "cost_anomaly" in avail_set and "original_cost_lakhs" in df.columns and "sector" in df.columns:
+        ca_results = cost_anomaly.detect(df)
 
-    delay_kwargs: dict[str, Any] = {}
-    if reference_date is not None:
-        delay_kwargs["reference_date"] = reference_date
-    delay_results = delay.detect(df, **delay_kwargs)
+    pm_results: list[dict] = []
+    if (
+        "progress_mismatch" in avail_set
+        and "expenditure_lakhs" in df.columns
+        and "revised_cost_lakhs" in df.columns
+        and "physical_progress_pct" in df.columns
+    ):
+        pm_kwargs: dict[str, Any] = {}
+        if progress_threshold is not None:
+            pm_kwargs["threshold"] = progress_threshold
+        pm_results = progress_mismatch.detect(df, **pm_kwargs)
 
-    co_kwargs: dict[str, Any] = {}
-    if cost_overrun_threshold is not None:
-        co_kwargs["threshold"] = cost_overrun_threshold
-    co_results = cost_overrun.detect(df, **co_kwargs)
+    delay_results: list[dict] = []
+    if (
+        "delay" in avail_set
+        and "status" in df.columns
+        and ("revised_completion_date" in df.columns or "target_completion_date" in df.columns)
+    ):
+        delay_kwargs: dict[str, Any] = {}
+        if reference_date is not None:
+            delay_kwargs["reference_date"] = reference_date
+        delay_results = delay.detect(df, **delay_kwargs)
+
+    co_results: list[dict] = []
+    if (
+        "cost_overrun" in avail_set
+        and "original_cost_lakhs" in df.columns
+        and "revised_cost_lakhs" in df.columns
+    ):
+        co_kwargs: dict[str, Any] = {}
+        if cost_overrun_threshold is not None:
+            co_kwargs["threshold"] = cost_overrun_threshold
+        co_results = cost_overrun.detect(df, **co_kwargs)
 
     project_signals: dict[str, list[dict]] = {}
     for row_pid in df["project_id"].unique():
@@ -236,7 +278,11 @@ def evaluate_projects(
     results: list[dict] = []
     for pid in df["project_id"].unique():
         pid_str = str(pid)
-        eval_res = evaluate_project(pid_str, project_signals[pid_str])
+        eval_res = evaluate_project(
+            pid_str,
+            project_signals[pid_str],
+            detector_availability=detector_availability,
+        )
         results.append(eval_res)
 
     return results

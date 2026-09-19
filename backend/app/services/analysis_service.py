@@ -23,6 +23,7 @@ import pandas as pd
 
 from app.config import settings
 from app.engine import risk_engine
+from app.services import dataset_adapter
 
 
 REQUIRED_COLUMNS: set[str] = {
@@ -148,3 +149,54 @@ class AnalysisService:
                 return res
 
         raise ProjectNotFoundError(f"Project '{project_id}' not found in dataset.")
+
+    def analyze_uploaded_dataset(
+        self,
+        file_bytes: bytes,
+        filename: str,
+        reference_date: date | None = None,
+        progress_threshold: float | None = None,
+        cost_overrun_threshold: float | None = None,
+    ) -> dict:
+        """
+        Process an uploaded CSV dataset, map headers, check detector availability,
+        and run Risk Engine on available detectors.
+
+        Returns
+        -------
+        dict
+          Summary, detector_availability, warnings, and projects analysis.
+        """
+        adapter_res = dataset_adapter.process_csv_bytes(file_bytes, filename)
+
+        active_detectors = [
+            det_name
+            for det_name, info in adapter_res.detector_availability.items()
+            if info["available"]
+        ]
+
+        evaluated_projects = risk_engine.evaluate_projects(
+            df=adapter_res.df,
+            reference_date=reference_date,
+            progress_threshold=progress_threshold,
+            cost_overrun_threshold=cost_overrun_threshold,
+            available_detectors=active_detectors,
+            detector_availability=adapter_res.detector_availability,
+        )
+
+        risk_dist = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+        for p in evaluated_projects:
+            lvl = p.get("risk_level", "LOW")
+            risk_dist[lvl] = risk_dist.get(lvl, 0) + 1
+
+        return {
+            "filename": adapter_res.filename,
+            "total_projects": len(evaluated_projects),
+            "summary": {
+                "total": len(evaluated_projects),
+                "risk_distribution": risk_dist,
+            },
+            "detector_availability": adapter_res.detector_availability,
+            "warnings": adapter_res.warnings,
+            "projects": evaluated_projects,
+        }
