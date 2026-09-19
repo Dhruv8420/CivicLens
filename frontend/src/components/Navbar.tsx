@@ -5,6 +5,8 @@ interface NavbarProps {
   totalProjects?: number;
   onOpenUpload?: () => void;
   isUploadOpen?: boolean;
+  activeTab?: string;
+  onSelectTab?: (tab: string) => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -12,7 +14,18 @@ export const Navbar: React.FC<NavbarProps> = ({
   totalProjects,
   onOpenUpload,
   isUploadOpen,
+  activeTab = 'overview',
+  onSelectTab,
 }) => {
+  const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, tab: string, targetId: string) => {
+    e.preventDefault();
+    onSelectTab?.(tab);
+    const element = document.getElementById(targetId);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
   return (
     <header className="navbar">
       <div className="navbar-container">
@@ -34,9 +47,27 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         <nav className="navbar-nav">
-          <a href="#overview" className="nav-link active">Overview</a>
-          <a href="#projects" className="nav-link">Projects Audit</a>
-          <a href="#detectors" className="nav-link">Risk Engine</a>
+          <a
+            href="#overview"
+            className={`nav-link ${activeTab === 'overview' ? 'active' : ''}`}
+            onClick={(e) => handleNavClick(e, 'overview', 'overview')}
+          >
+            Overview
+          </a>
+          <a
+            href="#projects"
+            className={`nav-link ${activeTab === 'projects' ? 'active' : ''}`}
+            onClick={(e) => handleNavClick(e, 'projects', 'projects')}
+          >
+            Projects Audit
+          </a>
+          <a
+            href="#detectors"
+            className={`nav-link ${activeTab === 'detectors' ? 'active' : ''}`}
+            onClick={(e) => handleNavClick(e, 'detectors', 'detectors')}
+          >
+            Risk Engine
+          </a>
         </nav>
 
         <div className="navbar-meta">

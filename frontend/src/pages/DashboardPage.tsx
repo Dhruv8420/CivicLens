@@ -18,6 +18,7 @@ export const DashboardPage: React.FC = () => {
   const [activeFilter, setActiveFilter] = useState<string>('ALL');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [showUploadForm, setShowUploadForm] = useState<boolean>(false);
+  const [activeNavTab, setActiveNavTab] = useState<string>('overview');
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -74,10 +75,12 @@ export const DashboardPage: React.FC = () => {
         totalProjects={projects.length}
         onOpenUpload={() => setShowUploadForm(!showUploadForm)}
         isUploadOpen={showUploadForm}
+        activeTab={activeNavTab}
+        onSelectTab={(tab) => setActiveNavTab(tab)}
       />
 
       <main className="dashboard-content">
-        <div className="hero-banner">
+        <div id="overview" className="hero-banner">
           <div className="hero-content">
             <div className="hero-pill">
               <span className="hero-pill-icon">🛡️</span>
@@ -133,13 +136,67 @@ export const DashboardPage: React.FC = () => {
               onSelectFilter={(lvl) => setActiveFilter(lvl)}
             />
 
-            <ProjectTable
-              projects={projects}
-              activeFilter={activeFilter}
-              onFilterChange={(lvl) => setActiveFilter(lvl)}
-              selectedProjectId={selectedProjectId}
-              onSelectProject={(id) => setSelectedProjectId(id)}
-            />
+            <div id="projects">
+              <ProjectTable
+                projects={projects}
+                activeFilter={activeFilter}
+                onFilterChange={(lvl) => setActiveFilter(lvl)}
+                selectedProjectId={selectedProjectId}
+                onSelectProject={(id) => setSelectedProjectId(id)}
+              />
+            </div>
+
+            <div id="detectors" className="risk-engine-info-card">
+              <div className="engine-card-header">
+                <div className="engine-title-group">
+                  <span className="engine-icon">⚙️</span>
+                  <div>
+                    <h3 className="engine-title">Explainable Risk Engine Methodology</h3>
+                    <p className="engine-subtitle">
+                      Combines four objective statistical detectors into a transparent 0–100 score. All rules prioritize empirical data without subjective fraud claims.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="detectors-grid">
+                <div className="detector-card">
+                  <div className="detector-card-header">
+                    <span className="detector-name">Cost Anomaly</span>
+                    <span className="detector-weight">25 pts max</span>
+                  </div>
+                  <p className="detector-desc">
+                    Identifies original cost outliers exceeding 1.5x IQR above the sector's 75th percentile.
+                  </p>
+                </div>
+                <div className="detector-card">
+                  <div className="detector-card-header">
+                    <span className="detector-name">Progress Mismatch</span>
+                    <span className="detector-weight">30 pts max</span>
+                  </div>
+                  <p className="detector-desc">
+                    Flags gaps where financial expenditure percentage exceeds physical completion progress.
+                  </p>
+                </div>
+                <div className="detector-card">
+                  <div className="detector-card-header">
+                    <span className="detector-name">Project Delay</span>
+                    <span className="detector-weight">20 pts max</span>
+                  </div>
+                  <p className="detector-desc">
+                    Calculates schedule delay days past completion deadline for active projects.
+                  </p>
+                </div>
+                <div className="detector-card">
+                  <div className="detector-card-header">
+                    <span className="detector-name">Cost Overrun</span>
+                    <span className="detector-weight">25 pts max</span>
+                  </div>
+                  <p className="detector-desc">
+                    Evaluates budget inflation comparing revised sanctioned cost against original project cost.
+                  </p>
+                </div>
+              </div>
+            </div>
           </>
         )}
       </main>
