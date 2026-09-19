@@ -25,7 +25,11 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({
   const filteredAndSortedProjects = useMemo(() => {
     return projects
       .filter((p) => {
-        if (activeFilter !== 'ALL' && p.risk_level !== activeFilter) {
+        if (activeFilter === 'FLAGGED') {
+          if (p.flagged_detectors_count <= 0) {
+            return false;
+          }
+        } else if (activeFilter !== 'ALL' && p.risk_level !== activeFilter) {
           return false;
         }
 
@@ -76,6 +80,7 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({
     { label: 'High Risk', value: 'HIGH' },
     { label: 'Medium Risk', value: 'MEDIUM' },
     { label: 'Low Risk', value: 'LOW' },
+    { label: 'Flagged (1+)', value: 'FLAGGED' },
   ];
 
   return (

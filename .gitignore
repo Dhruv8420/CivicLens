@@ -45,3 +45,4 @@ frontend/.vite/
 
 # Data artifacts (keep sample, ignore user uploads)
 backend/data/uploads/
+scratch/

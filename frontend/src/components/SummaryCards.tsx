@@ -55,7 +55,10 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
         <p className="card-description">Verification recommended</p>
       </div>
 
-      <div className="summary-card">
+      <div
+        className={`summary-card ${activeFilter === 'FLAGGED' ? 'active' : ''}`}
+        onClick={() => onSelectFilter?.('FLAGGED')}
+      >
         <div className="card-header">
           <span className="card-title">Flagged Indicators</span>
           <div className="card-icon card-icon-blue">🔎</div>
