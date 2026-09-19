@@ -256,10 +256,11 @@ def process_csv_bytes(file_bytes: bytes, filename: str) -> AdapterResult:
         df["sector"] = df["sector"].fillna("General").astype(str).str.strip()
 
     if "status" not in df.columns:
-        df["status"] = "In Progress"
-        warnings.append("Column 'status' missing; defaulted to 'In Progress'.")
+        if not is_mospi:
+            df["status"] = "In Progress"
+            warnings.append("Column 'status' missing; defaulted to 'In Progress'.")
     else:
-        df["status"] = df["status"].fillna("In Progress").astype(str).str.strip()
+        df["status"] = df["status"].fillna("In Progress" if not is_mospi else "").astype(str).str.strip()
 
     # Clean numeric columns
     numeric_cols = [

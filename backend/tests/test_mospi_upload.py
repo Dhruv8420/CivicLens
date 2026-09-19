@@ -50,6 +50,11 @@ def test_mospi_adapter_ingestion():
     assert "physical_progress_pct" not in result.df.columns or result.df["physical_progress_pct"].isna().all()
     assert "revised_completion_date" not in result.df.columns or result.df["revised_completion_date"].isna().all()
 
+    # Step 4.11 check: Verify status is NOT fabricated to 'In Progress' for MoSPI
+    assert "status" not in result.df.columns or (result.df["status"] != "In Progress").all()
+    status_warnings = [w for w in result.warnings if "status" in w.lower()]
+    assert len(status_warnings) == 0, f"Unexpected status fabrication warning found: {status_warnings}"
+
     # Verify detector availability
     avail = result.detector_availability
     assert avail["cost_anomaly"]["available"] is True
@@ -115,3 +120,17 @@ def test_generic_csv_duplicate_suffixes():
     result = process_csv_bytes(csv_data.encode("utf-8"), "generic_dups.csv")
     assert len(result.df) == 2
     assert list(result.df["project_id"]) == ["PRJ-DUP", "PRJ-DUP_2"]
+
+
+def test_generic_csv_status_fallback_preserved():
+    """Test that generic non-MoSPI CSV without status still receives the 'In Progress' fallback and warning."""
+    csv_data = (
+        "project_id,project_name,sector,original_cost_lakhs\n"
+        "PRJ-GEN-STAT,Road Work,Transport,500.0\n"
+    )
+    result = process_csv_bytes(csv_data.encode("utf-8"), "generic_no_status.csv")
+    assert "status" in result.df.columns
+    assert result.df["status"].iloc[0] == "In Progress"
+    status_warns = [w for w in result.warnings if "status" in w.lower()]
+    assert len(status_warns) == 1
+    assert "defaulted to 'In Progress'" in status_warns[0]
