@@ -327,34 +327,46 @@ def _generate_normal_record(index: int) -> dict:
 
 def _plant_cost_anomaly(record: dict) -> dict:
     """
-    COST ANOMALY: Set original_cost_lakhs to 3–5× the sector's upper bound,
+    COST ANOMALY: Set original_cost_lakhs to 3.8–5× the sector's upper bound,
     making it a clear statistical outlier when compared to sector peers via IQR.
     """
     sector = record["sector"]
     _, cost_hi = COST_RANGES[sector]
-    record["original_cost_lakhs"] = _round2(random.uniform(cost_hi * 3, cost_hi * 5))
-    # Keep revised >= original
-    record["revised_cost_lakhs"] = _round2(
-        record["original_cost_lakhs"] * random.uniform(1.0, 1.10)
-    )
-    # Recalculate expenditure proportionally
-    pct = record["physical_progress_pct"] / 100
-    record["expenditure_lakhs"] = _round2(
-        record["revised_cost_lakhs"] * pct * random.uniform(0.9, 1.1)
-    )
+    new_orig = _round2(random.uniform(cost_hi * 3.8, cost_hi * 5.0))
+
+    # Calculate current overrun factor (if cost overrun was already applied)
+    old_orig = record["original_cost_lakhs"]
+    old_rev = record["revised_cost_lakhs"]
+    overrun_factor = old_rev / old_orig if old_orig > 0 else 1.05
+
+    record["original_cost_lakhs"] = new_orig
+    if overrun_factor >= 1.35:
+        record["revised_cost_lakhs"] = _round2(new_orig * overrun_factor)
+    else:
+        record["revised_cost_lakhs"] = _round2(new_orig * random.uniform(1.02, 1.10))
+
+    # Calculate financial progress ratio (if expenditure was already set)
+    old_rev_cost = max(old_rev, 1.0)
+    fin_pct = record["expenditure_lakhs"] / old_rev_cost
+    if fin_pct >= 0.50:
+        record["expenditure_lakhs"] = _round2(record["revised_cost_lakhs"] * min(fin_pct, 0.90))
+    else:
+        pct = record["physical_progress_pct"] / 100
+        record["expenditure_lakhs"] = _round2(
+            record["revised_cost_lakhs"] * pct * random.uniform(0.9, 1.1)
+        )
     return record
 
 
 def _plant_progress_mismatch(record: dict) -> dict:
     """
-    EXPENDITURE vs PHYSICAL PROGRESS MISMATCH: High financial spend (60–90%
-    of budget) but very low physical completion (5–20%). This creates a gap
-    of 40+ percentage points, well above the 25-point detection threshold.
+    EXPENDITURE vs PHYSICAL PROGRESS MISMATCH: High financial spend (70–90%
+    of budget) but very low physical completion (5–15%). This creates a gap
+    of 55+ percentage points, well above the 25-point detection threshold.
     """
     record["status"] = "In Progress"
-    record["physical_progress_pct"] = _round2(random.uniform(5, 20))
-    # Spend 60–90% of revised cost
-    spend_pct = random.uniform(0.60, 0.90)
+    record["physical_progress_pct"] = _round2(random.uniform(5, 15))
+    spend_pct = random.uniform(0.70, 0.90)
     record["expenditure_lakhs"] = _round2(
         record["revised_cost_lakhs"] * spend_pct
     )
@@ -363,36 +375,48 @@ def _plant_progress_mismatch(record: dict) -> dict:
 
 def _plant_cost_overrun(record: dict) -> dict:
     """
-    COST OVERRUN: revised_cost is 40–120% higher than original_cost,
+    COST OVERRUN: revised_cost is 60–110% higher than original_cost,
     well above the 20% detection threshold.
     """
-    overrun_factor = random.uniform(1.40, 2.20)
+    overrun_factor = random.uniform(1.60, 2.10)
+    old_rev = max(record["revised_cost_lakhs"], 1.0)
+    fin_pct = record["expenditure_lakhs"] / old_rev
+
     record["revised_cost_lakhs"] = _round2(
         record["original_cost_lakhs"] * overrun_factor
     )
-    # Adjust expenditure so it doesn't exceed revised cost
-    record["expenditure_lakhs"] = _round2(
-        min(record["expenditure_lakhs"], record["revised_cost_lakhs"] * 0.7)
-    )
+
+    if fin_pct >= 0.50:
+        record["expenditure_lakhs"] = _round2(
+            record["revised_cost_lakhs"] * min(fin_pct, 0.90)
+        )
+    else:
+        record["expenditure_lakhs"] = _round2(
+            min(record["expenditure_lakhs"], record["revised_cost_lakhs"] * 0.7)
+        )
     return record
 
 
 def _plant_delay(record: dict) -> dict:
     """
     DELAY: Project is significantly overdue. revised_completion_date is set
-    18–36 months beyond target_completion_date, with physical progress still
-    incomplete (30–65%).
+    1.5–2+ years prior to reference date (2026-09-18), with status 'In Progress'.
     """
     record["status"] = "In Progress"
-    target = date.fromisoformat(record["target_completion_date"])
-    delay_days = random.randint(18 * 30, 36 * 30)  # 18–36 months
-    record["revised_completion_date"] = (target + timedelta(days=delay_days)).isoformat()
-    record["physical_progress_pct"] = _round2(random.uniform(30, 65))
-    # Recalculate expenditure to be consistent with (low) progress
-    spend_pct = record["physical_progress_pct"] / 100 * random.uniform(0.9, 1.3)
-    record["expenditure_lakhs"] = _round2(
-        record["revised_cost_lakhs"] * min(spend_pct, 0.85)
-    )
+    ref_date = date(2026, 9, 18)
+    delay_past_days = random.randint(500, 730)
+    revised_date = ref_date - timedelta(days=delay_past_days)
+    target_date = revised_date - timedelta(days=random.randint(180, 365))
+
+    record["target_completion_date"] = target_date.isoformat()
+    record["revised_completion_date"] = revised_date.isoformat()
+
+    if record["physical_progress_pct"] > 20:
+        record["physical_progress_pct"] = _round2(random.uniform(30, 65))
+        spend_pct = record["physical_progress_pct"] / 100 * random.uniform(0.9, 1.3)
+        record["expenditure_lakhs"] = _round2(
+            record["revised_cost_lakhs"] * min(spend_pct, 0.85)
+        )
     return record
 
 
@@ -401,31 +425,34 @@ def _plant_delay(record: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Maps record index → anomaly planter function.
 # These indices are chosen to spread anomalies across the dataset.
-# Some records receive a SINGLE anomaly type; a few receive two (compound).
+# Some records receive a SINGLE anomaly type; a few receive overlapping anomalies.
 #
 # Total unique anomalous records: 15
 # Breakdown:
-#   Cost anomaly only:        indices 7, 23, 55, 78          (4)
-#   Progress mismatch only:   indices 12, 38, 64, 91         (4)
-#   Cost overrun only:        indices 19, 45, 72              (3)
-#   Delay only:               indices 31, 58, 85              (3)
-#   Compound (overrun+delay): index 50                        (1)
+#   Cost anomaly only:        indices 7, 23, 55, 78                                 (4)
+#   Progress mismatch only:   indices 12, 38, 64, 91                                (4)
+#   Cost overrun only:        indices 45                                            (1)
+#   Delay only:               indices 58                                            (1)
+#   2-way Overlaps:           indices 19 (mismatch+overrun), 31 (mismatch+delay),  (3)
+#                             72 (cost anomaly+overrun)
+#   3-way Overlap:            index 85 (cost anomaly+mismatch+delay)                (1)
+#   4-way Overlap:            index 50 (cost anomaly+overrun+mismatch+delay)        (1)
 #
 ANOMALY_PLAN: dict[int, list] = {
     7:  [_plant_cost_anomaly],
     12: [_plant_progress_mismatch],
-    19: [_plant_cost_overrun],
+    19: [_plant_progress_mismatch, _plant_cost_overrun],
     23: [_plant_cost_anomaly],
-    31: [_plant_delay],
+    31: [_plant_progress_mismatch, _plant_delay],
     38: [_plant_progress_mismatch],
     45: [_plant_cost_overrun],
-    50: [_plant_cost_overrun, _plant_delay],  # compound anomaly
+    50: [_plant_cost_anomaly, _plant_cost_overrun, _plant_progress_mismatch, _plant_delay],
     55: [_plant_cost_anomaly],
     58: [_plant_delay],
     64: [_plant_progress_mismatch],
-    72: [_plant_cost_overrun],
+    72: [_plant_cost_anomaly, _plant_cost_overrun],
     78: [_plant_cost_anomaly],
-    85: [_plant_delay],
+    85: [_plant_cost_anomaly, _plant_progress_mismatch, _plant_delay],
     91: [_plant_progress_mismatch],
 }
 
@@ -433,18 +460,18 @@ ANOMALY_PLAN: dict[int, list] = {
 ANOMALY_REFERENCE = {
     7:  "Cost anomaly (unusually high cost for sector)",
     12: "Expenditure vs physical progress mismatch",
-    19: "Cost overrun (revised >> original)",
+    19: "Compound: Expenditure vs physical progress mismatch + Cost overrun",
     23: "Cost anomaly (unusually high cost for sector)",
-    31: "Delay (revised completion >> target)",
+    31: "Compound: Expenditure vs physical progress mismatch + Delay",
     38: "Expenditure vs physical progress mismatch",
     45: "Cost overrun (revised >> original)",
-    50: "Compound: Cost overrun + Delay",
+    50: "Compound: 4-way Overlap (Cost anomaly + Cost overrun + Progress mismatch + Delay)",
     55: "Cost anomaly (unusually high cost for sector)",
     58: "Delay (revised completion >> target)",
     64: "Expenditure vs physical progress mismatch",
-    72: "Cost overrun (revised >> original)",
+    72: "Compound: Cost anomaly + Cost overrun",
     78: "Cost anomaly (unusually high cost for sector)",
-    85: "Delay (revised completion >> target)",
+    85: "Compound: 3-way Overlap (Cost anomaly + Progress mismatch + Delay)",
     91: "Expenditure vs physical progress mismatch",
 }
 
