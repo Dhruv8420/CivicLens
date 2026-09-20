@@ -232,7 +232,7 @@ sudo systemctl status civiclens
 | **Arghya Roy** | **Dhruba Bauri** |
 | 🎓 B.Tech, Information Technology | 🎓 B.Tech, CSE — AI/ML |
 | ☁️ Cloud & DevOps Enthusiast | 🧠 MLOps Enthusiast |
-| [![GitHub](https://img.shields.io/badge/GitHub-181717?style=flat&logo=github&logoColor=white)](#) [![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?style=flat&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/arghyaroy1/) | [![GitHub](https://img.shields.io/badge/GitHub-181717?style=flat&logo=github&logoColor=white)](#) [![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?style=flat&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/dhrubabauri) |
+| [![GitHub](https://img.shields.io/badge/GitHub-181717?style=flat&logo=github&logoColor=white)](https://github.com/arghyaroy331) [![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?style=flat&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/arghyaroy1/) | [![GitHub](https://img.shields.io/badge/GitHub-181717?style=flat&logo=github&logoColor=white)](https://github.com/Dhruv8420) [![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?style=flat&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/dhrubabauri) |
 
 ⭐ **If you found this project useful, consider giving it a star — it genuinely helps!**
 
