@@ -129,6 +129,29 @@ Each detector is checked independently against the uploaded dataset — unavaila
 
 ## 📊 AWS Services Explained
 
+```
+                 Internet                    Admin · Session Manager
+                    │                                   │
+                    ▼                                   ▼
+┌───────────────────────────────────────────────────────────────────┐
+│  VPC (existing, public subnet)                                     │
+│                                                                     │
+│   ┌───────────────────────────────────────────────────────────┐   │
+│   │  EC2 instance — Amazon Linux 2023                          │   │
+│   │                                                             │   │
+│   │   ┌─────────────────────┐        ┌─────────────────────┐   │   │
+│   │   │  Nginx              │  /api/ │  FastAPI             │   │   │
+│   │   │  Reverse proxy      │──────▶ │  Backend :8000        │   │   │
+│   │   └─────────────────────┘        └─────────────────────┘   │   │
+│   │                                                             │   │
+│   └───────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│   Security group: HTTP/80 + HTTPS/443 only · no inbound SSH        │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+Only two paths cross the VPC boundary: public HTTP/HTTPS traffic through the security group, and admin access via **Session Manager** — brokered by the IAM instance profile's `AmazonSSMManagedInstanceCore` role, with no open inbound SSH port. The VPC, subnet, and EC2 key pair are assumed to already exist; `civiclens-ec2-existing-vpc.yaml` provisions everything inside that boundary — the instance, security group, IAM role, and instance profile — with no secrets embedded.
+
 | Service | Role in CivicLens |
 |---|---|
 | **Amazon EC2** (Amazon Linux 2023) | Hosts the built React frontend and the FastAPI backend on a single instance. |
