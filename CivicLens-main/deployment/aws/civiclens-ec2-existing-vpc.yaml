@@ -1,0 +1,95 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CivicLens AWS deployment resources for an existing VPC/subnet.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Existing VPC for CivicLens.
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Existing public subnet for the CivicLens EC2 instance.
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Existing EC2 key pair name.
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+      - t3.micro
+      - t3.small
+    Description: EC2 instance type.
+
+Resources:
+  CivicLensSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: CivicLens web server security group
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  CivicLensSSMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub CivicLens-EC2-SSM-${AWS::StackName}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+  CivicLensInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref CivicLensSSMRole
+
+  CivicLensInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}'
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref CivicLensSecurityGroup
+      IamInstanceProfile: !Ref CivicLensInstanceProfile
+      Tags:
+        - Key: Name
+          Value: CivicLens
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 20
+            VolumeType: gp3
+            DeleteOnTermination: true
+            Encrypted: true
+
+Outputs:
+  InstanceId:
+    Description: CivicLens EC2 instance ID
+    Value: !Ref CivicLensInstance
+  SecurityGroupId:
+    Description: CivicLens security group ID
+    Value: !Ref CivicLensSecurityGroup
+  SSMRoleName:
+    Description: IAM role used by the EC2 instance
+    Value: !Ref CivicLensSSMRole

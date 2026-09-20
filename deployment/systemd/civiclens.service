@@ -1,0 +1,17 @@
+[Unit]
+Description=CivicLens FastAPI backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/opt/CivicLens/backend
+Environment="PATH=/opt/CivicLens/.venv/bin"
+ExecStart=/opt/CivicLens/.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
